@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- 3C-1: referencia corregida para apuntar al Bib_Hacienda TO-BE
+         (Hacienda_TOBE_BLOQUE_3B), reemplazando el HintPath al .dll
+         AS-IS que usaba el proyecto original. -->
+    <ProjectReference Include="..\Bib_Hacienda\Bib_Hacienda.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Los repositorios de Bib_Hacienda leen Datos\*.txt desde el output
+         (AppDomain.CurrentDomain.BaseDirectory), así que hay que copiar los
+         datos semilla al compilar/ejecutar para que el login encuentre usuarios. -->
+    <Content Include="Datos\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+</Project>

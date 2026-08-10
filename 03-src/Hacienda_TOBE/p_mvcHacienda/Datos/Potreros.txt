@@ -1,0 +1,4 @@
+Potrero_Terneros|ternero
+Potrero_Cebones|cebon
+Potrero_Novillos|novillo
+Potrero Norte|novillo

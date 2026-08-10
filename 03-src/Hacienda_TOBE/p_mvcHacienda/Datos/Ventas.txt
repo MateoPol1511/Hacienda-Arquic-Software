@@ -1,0 +1,2 @@
+Potrero_Cebones|2025-11-06|Estrella|292|40|Cebon|2500000
+Potrero_Terneros|2025-11-06|Majo|65|10|Ternero|800000

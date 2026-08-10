@@ -1,0 +1,45 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    3C-2B: proyecto migrado de formato clásico (TargetFrameworkVersion
+    v4.7.2, csproj no-SDK) a formato SDK-style con TargetFramework net8.0.
+
+    Motivo (ver punto 6 del bloque, "FRAMEWORK"):
+    - p_mvcHacienda es un proyecto ASP.NET Core (Microsoft.NET.Sdk.Web)
+      dirigido a net8.0. Un proyecto SDK-style no puede compilarse con el
+      SDK de .NET (comando `dotnet build`/`dotnet restore`) contra un
+      csproj clásico dirigido a .NET Framework 4.7.2 fuera de Windows (no
+      hay MSBuild de .NET Framework disponible en este entorno Linux), y
+      aun en Windows la combinación SDK-style -> ProjectReference -> csproj
+      clásico es frágil y no está soportada de forma oficial por el SDK de
+      .NET moderno.
+    - Se revisó el código real de Bib_Hacienda (Dominio/Aplicacion/
+      Infraestructura) buscando APIs exclusivas de .NET Framework
+      (System.Configuration/ConfigurationManager, System.Web, Castle
+      DynamicProxy, Remoting, BinaryFormatter, etc.). La única referencia
+      "sensible" encontrada es AppDomain.CurrentDomain.BaseDirectory
+      (Infraestructura/DirectorioDatos.cs), que también existe y funciona
+      igual en .NET 8. El resto del código usa exclusivamente BCL portable
+      (System.Collections.Generic, System.Linq, System.IO, System.Security.
+      Cryptography, etc.), sin dependencias de paquetes NuGet.
+    - Por lo tanto, el cambio mínimo y necesario para conseguir una
+      solución compilable es retargetear Bib_Hacienda a net8.0 (mismo
+      framework que p_mvcHacienda), sin tocar ninguna clase del dominio ni
+      de la aplicación. No se migran namespaces, tipos, ni arquitectura:
+      solo el formato/target del proyecto.
+    - GenerateAssemblyInfo se desactiva porque el proyecto conserva su
+      Properties/AssemblyInfo.cs explícito (formato clásico); dejar el
+      valor por defecto (true) produciría atributos de ensamblado
+      duplicados (CS0579) contra el AssemblyInfo.cs generado automáticamente
+      por el SDK.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <RootNamespace>Bib_Hacienda</RootNamespace>
+    <AssemblyName>Bib_Hacienda</AssemblyName>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+  </PropertyGroup>
+
+</Project>

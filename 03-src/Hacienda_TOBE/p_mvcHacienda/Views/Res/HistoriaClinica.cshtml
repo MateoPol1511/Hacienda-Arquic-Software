@@ -1,0 +1,100 @@
+@model List<Bib_Hacienda.Dominio.EventoClinico>
+@{
+    ViewData["Title"] = $"Historia clínica - {ViewBag.NombreRes}";
+}
+<div class="container mt-4">
+    <div class="aw-page-header mb-4 d-flex justify-content-between align-items-center">
+        <div>
+            <h1 class="display-6 fw-bold mb-1" style="color: var(--aw-text);">
+                🩺 Historia clínica de @ViewBag.NombreRes
+            </h1>
+            <p class="text-muted mb-0">Potrero: @ViewBag.PotreroId</p>
+        </div>
+        <a asp-action="Index" class="btn aw-btn aw-btn-secondary">
+            <span class="material-icons-outlined" style="font-size: 1.2rem; vertical-align: sub;">arrow_back</span>
+            Volver
+        </a>
+    </div>
+
+    <!-- Mensaje de éxito/error -->
+    @if (TempData["Mensaje"] != null)
+    {
+        <div class="alert alert-@TempData["TipoMensaje"] alert-dismissible fade show" role="alert">
+            <strong>@TempData["Mensaje"]</strong>
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    }
+
+    <!-- Formulario para registrar un nuevo evento clínico -->
+    <div class="aw-card mb-4 aw-reveal">
+        <div class="p-3">
+            <h5 class="fw-bold mb-3">Registrar nuevo evento clínico</h5>
+            <form asp-action="RegistrarEventoClinico" method="post" class="row g-3">
+                @Html.AntiForgeryToken()
+                <input type="hidden" name="potreroId" value="@ViewBag.PotreroId" />
+                <input type="hidden" name="nombreRes" value="@ViewBag.NombreRes" />
+
+                <div class="col-md-3">
+                    <label for="fecha" class="form-label fw-bold">Fecha del evento:</label>
+                    <input type="date" class="form-control" id="fecha" name="fecha" required />
+                </div>
+                <div class="col-md-3">
+                    <label for="tipoEvento" class="form-label fw-bold">Tipo / categoría:</label>
+                    <input type="text" class="form-control" id="tipoEvento" name="tipoEvento" placeholder="Ej: Revisión, Enfermedad, Tratamiento" required />
+                </div>
+                <div class="col-md-6">
+                    <label for="descripcion" class="form-label fw-bold">Descripción / observación:</label>
+                    <input type="text" class="form-control" id="descripcion" name="descripcion" placeholder="Detalle del evento clínico" required />
+                </div>
+                <div class="col-12">
+                    <button type="submit" class="btn aw-btn aw-btn-primary">
+                        <span class="material-icons-outlined" style="font-size: 1rem; vertical-align: sub;">check</span>
+                        Registrar evento
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Listado cronológico de eventos clínicos -->
+    @if (Model != null && Model.Any())
+    {
+        <div class="aw-card aw-reveal">
+            <div class="p-3">
+                <table class="table table-hover aw-table align-middle">
+                    <thead>
+                        <tr>
+                            <th>Fecha</th>
+                            <th>Tipo / categoría</th>
+                            <th>Descripción</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var e in Model)
+                        {
+                            <tr>
+                                <td class="fw-semibold">@e.Fecha.ToString("yyyy-MM-dd")</td>
+                                <td><span class="aw-badge aw-badge-info">@e.TipoEvento</span></td>
+                                <td>@e.Descripcion</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="alert alert-info aw-card border-0 text-center py-5">
+            <h5>Esta res aún no tiene eventos registrados en su historia clínica.</h5>
+        </div>
+    }
+</div>
+
+@section Scripts {
+    <script>
+        setTimeout(function() {
+            $('.alert-dismissible').alert('close');
+        }, 15000);
+    </script>
+}
