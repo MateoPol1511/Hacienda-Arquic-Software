@@ -1,0 +1,611 @@
+@startuml Hacienda_AS-IS
+
+skinparam classAttributeIconSize 0
+skinparam shadowing false
+skinparam linetype ortho
+skinparam packageStyle rectangle
+skinparam ranksep 40
+skinparam nodesep 30
+hide empty members
+
+' ============================================================
+' Bib_Hacienda.Aspectos
+' (IInterceptor, IHttpContextAccessor son tipos externos de
+'  Castle.DynamicProxy / ASP.NET Core: no se representan como
+'  clases, pero los campos y parámetros que los usan se
+'  conservan tal cual están en el código)
+' ============================================================
+package "Bib_Hacienda.Aspectos" {
+
+  class InterceptorAutenticacion {
+    - _httpContextAccessor : IHttpContextAccessor {readonly}
+    + InterceptorAutenticacion(httpContextAccessor : IHttpContextAccessor)
+    + Intercept(invocation : IInvocation) : void
+  }
+
+  class InterceptorValidarInformacion {
+    - _httpContextAccessor : IHttpContextAccessor {readonly}
+    + InterceptorValidarInformacion(httpContextAccessor : IHttpContextAccessor)
+    + Intercept(invocation : IInvocation) : void
+  }
+}
+
+' ============================================================
+' Bib_Hacienda.Interfaces
+' ============================================================
+package "Bib_Hacienda.Interfaces" {
+
+  interface IAutenticacion {
+    + AutorizarOperacion(usuario : Usuario, operacion : string) : void
+  }
+
+  interface ICreacionVacuna {
+    + crear_vacuna(nombre : string, lote : string, fecha_vencimiento : DateTime, fecha_aplicacion : DateTime, periodo_aplicacion : uint) : string
+    + crear_vacuna(nombre : string, lote : string, fecha_vencimiento : DateTime, fecha_aplicacion : DateTime, grado_atenuacion : Viva.enum_l_atenuaciones) : string
+    + crear_vacuna(nombre : string, lote_base : string, fecha_vencimiento : DateTime, fecha_aplicacion : DateTime, periodo_aplicacion : uint, cantidad : uint) : string
+    + crear_vacuna(nombre : string, lote_base : string, fecha_vencimiento : DateTime, fecha_aplicacion : DateTime, grado_atenuacion : Viva.enum_l_atenuaciones, cantidad : uint) : string
+  }
+
+  interface IVacunacion {
+    + aplicar_vacuna(vacuna : Vacuna, nombre : string, id_potrero : string) : string
+  }
+
+  interface IValidarInformacion {
+    + ValidarRes(res : Res) : bool
+    + ValidarPotrero(potrero : Potrero) : bool
+    + ValidarVacuna(vacuna : Vacuna) : bool
+    + ValidarVenta(venta : Venta) : bool
+  }
+
+  interface IVentaRes {
+    + vender_res(id_potrero : string, nombre : string, monto : uint) : string
+  }
+}
+
+' ============================================================
+' Bib_Hacienda.Reglas
+' ============================================================
+package "Bib_Hacienda.Reglas" {
+
+  abstract class ReglaRes {
+    + {static} peso_min_ternero : ushort {readonly} = 150
+    + {static} peso_min_cebon : ushort {readonly} = 290
+    + {static} peso_min_novillo : ushort {readonly} = 400
+    + {static} peso_recom_venta_ternero : ushort {readonly} = 250
+    + {static} peso_recom_venta_cebon : ushort {readonly} = 420
+    + {static} peso_recom_venta_novillo : ushort {readonly} = 550
+    + {static} edad_max_ternero : byte {readonly} = 12
+    + {static} edad_max_cebon : byte {readonly} = 48
+  }
+
+  abstract class ReglaVacuna {
+    + {static} max_bac_ternero : byte {readonly} = 3
+    + {static} max_bac_cebon : byte {readonly} = 1
+    + {static} max_bac_novillo : byte {readonly} = 2
+    + {static} max_viv_ternero : byte {readonly} = 1
+    + {static} max_viv_cebon : byte {readonly} = 4
+    + {static} max_viv_novillo : byte {readonly} = 2
+    + {static} periodo_min_bac_aplic : byte {readonly} = 2
+    + {static} periodo_max_bac_aplic : byte {readonly} = 4
+  }
+
+  abstract class ReglaPotrero {
+    + {static} max_reses_potrero : ushort {readonly} = 150
+  }
+}
+
+' ============================================================
+' Bib_Hacienda.Eventos
+' ============================================================
+package "Bib_Hacienda.Eventos" {
+
+  class PublisherPesoMin {
+    + <<delegate>> dele_peso_min(peso_min : string) : void
+    + evt_peso_min : dele_peso_min <<event>>
+    + Informar_Peso_Min(res : Res) : void
+    + {static} implicit operator PublisherPesoMin(v : PublisherPesoVenta) : PublisherPesoMin
+  }
+
+  class PublisherPesoVenta {
+    + <<delegate>> dele_peso_venta(peso_venta : string) : void
+    + evt_peso_venta : dele_peso_venta <<event>>
+    + Informar_Peso_Venta(res : Res) : void
+  }
+
+  class PublisherPotreroLleno {
+    + <<delegate>> delegado_potrero_lleno(mensaje : string) : void
+    + evt_potrero_lleno : delegado_potrero_lleno <<event>>
+    + Informar_Potrero_Lleno(cantidad_reses : ushort, potrero : Potrero) : void
+  }
+
+  class PublisherPotreroMitad {
+    + <<delegate>> delegado_potrero_mitad(mensaje : string) : void
+    + evt_potrero_mitad : delegado_potrero_mitad <<event>>
+    + Informar_Potrero_Mitad(cantidad_reses : ushort, potrero : Potrero) : void
+  }
+
+  class PublisherVacunaVencida {
+    + <<delegate>> dele_vacuna_vencida(mensaje : string) : void
+    + evt_vacuna_vencida : dele_vacuna_vencida <<event>>
+    + Informar_Vacuna_Vencida(vacuna : Vacuna) : bool
+  }
+
+  class PublisherVacunacionCompletada {
+    + <<delegate>> dele_vacunacion_completada(mensaje : string) : void
+    + evt_vacunacion_completada : dele_vacunacion_completada <<event>>
+    + Informar_Vacunacion_Completada(res : Res, contador_bacterianas : ushort, contador_vivas : ushort) : bool
+  }
+
+  PublisherPesoMin ..> ReglaRes : depende
+  PublisherPesoVenta ..> ReglaRes : depende
+  PublisherPotreroLleno ..> ReglaPotrero : depende
+  PublisherPotreroMitad ..> ReglaPotrero : depende
+  PublisherVacunacionCompletada ..> ReglaVacuna : depende
+  PublisherPesoMin ..> PublisherPesoVenta : operador implícito
+}
+
+' ============================================================
+' Bib_Hacienda.Clases
+' ============================================================
+package "Bib_Hacienda.Clases" {
+
+  class Usuario {
+    - nombre : string
+    - contrasena : string
+    + Usuario(nombre : string, contrasena : string)
+    + Nombre : string {get; set;}
+    + Contrasena : string {get; set;}
+  }
+
+  class Autenticacion {
+    - usuarios_registrados : List<Usuario>
+    + Usuarios_registrados : List<Usuario> {get; set;}
+    + Autenticacion()
+    + crear_usuario(nombre : string, contrasena : string) : string
+    + listar_usuarios() : List<Usuario>
+    + ValidarCredenciales(nombre : string, contrasena : string) : bool
+    + buscar_usuario(nombre : string) : Usuario
+    + AutorizarOperacion(usuario : Usuario, operacion : string) : void
+  }
+  Autenticacion ..|> IAutenticacion
+  Autenticacion "1" *-- "0..*" Usuario : usuarios_registrados
+
+  abstract class Vacuna {
+    - nombre : string
+    - lote : string
+    - fecha_vencimiento : DateTime
+    - fecha_aplicacion : DateTime
+    + Vacuna(nombre : string, lote : string, fecha_vencimiento : DateTime, fecha_aplicacion : DateTime)
+    + Nombre : string {get; set;}
+    + Lote : string {get; set;}
+    + Fecha_vencimiento : DateTime {get; set;}
+    + Fecha_aplicacion : DateTime {get; set;}
+  }
+
+  class Bacteriana {
+    - periodo_aplicacion : uint
+    + Bacteriana(nombre : string, lote : string, fecha_vencimiento : DateTime, fecha_aplicacion : DateTime, periodo_aplicacion : uint)
+    + Periodo_aplicacion : uint {get; set;}
+  }
+  Bacteriana --|> Vacuna
+  Bacteriana ..> ReglaVacuna : depende (límites de periodo)
+
+  class Viva {
+    + Viva(nombre : string, lote : string, fecha_vencimiento : DateTime, fecha_aplicacion : DateTime, periodo_atenuacion : enum_l_atenuaciones)
+    - periodo_atenuacion : enum_l_atenuaciones
+  }
+  Viva --|> Vacuna
+
+  enum "Viva.enum_l_atenuaciones" as enum_l_atenuaciones {
+    Atenuacion10 = 10
+    Atenuacion20 = 20
+    Atenuacion30 = 30
+  }
+  Viva +-- enum_l_atenuaciones
+
+  abstract class Res {
+    - nombre : string
+    - peso : uint
+    - edad : ushort
+    - l_vacunas_aplicadas : List<Vacuna>
+    ~ EventHandler() : void
+    + Res(nombre : string, peso : uint, edad : ushort)
+    + Edad : ushort {get; set;} <<virtual>>
+    + L_vacunas_aplicadas : List<Vacuna> {get; set;}
+    + Nombre : string {get; set;}
+    + Peso : uint {get; set;}
+  }
+  Res "1" *-- "0..*" Vacuna : l_vacunas_aplicadas
+
+  class Ternero {
+    + Ternero(nombre : string, peso : uint, edad : ushort)
+    + Edad : ushort {get; set;} <<override>>
+  }
+  Ternero --|> Res
+  Ternero ..> ReglaRes : depende (edad_max_ternero)
+
+  class Cebon {
+    + Cebon(nombre : string, peso : uint, edad : ushort)
+    + Edad : ushort {get; set;} <<override>>
+  }
+  Cebon --|> Res
+  Cebon ..> ReglaRes : depende (edad_max_ternero, edad_max_cebon)
+
+  class Novillo {
+    + Novillo(nombre : string, peso : uint, edad : ushort)
+    + Edad : ushort {get; set;} <<override>>
+  }
+  Novillo --|> Res
+  Novillo ..> ReglaRes : depende (edad_max_cebon)
+
+  class Potrero {
+    - identificacion : string
+    - l_reses : List<Res> = new List<Res>()
+    - tipo_potrero : l_tipos_potreros
+    - publisher_potrero_mitad : PublisherPotreroMitad = new PublisherPotreroMitad()
+    - publisher_potrero_lleno : PublisherPotreroLleno = new PublisherPotreroLleno()
+    - publisher_peso_venta : PublisherPesoVenta = new PublisherPesoVenta()
+    - publisher_peso_min : PublisherPesoMin = new PublisherPesoMin()
+    ~ EventHandler() : void
+    + Potrero(identificacion : string, tipo_potrero : l_tipos_potreros)
+    + anadir_res(nombre : string, edad : ushort, peso : uint) : string
+    + buscar_res(nombre : string) : Res
+    + L_reses : List<Res> {get; set;}
+    + Identificacion : string {get; set;}
+    + Tipo_potrero : l_tipos_potreros {get; set;}
+  }
+
+  enum "Potrero.l_tipos_potreros" as l_tipos_potreros {
+    ternero
+    novillo
+    cebon
+  }
+  Potrero +-- l_tipos_potreros
+
+  Potrero "1" *-- "0..150" Res : l_reses
+  Potrero "1" *-- "1" PublisherPotreroMitad
+  Potrero "1" *-- "1" PublisherPotreroLleno
+  Potrero "1" *-- "1" PublisherPesoVenta
+  Potrero "1" *-- "1" PublisherPesoMin
+  Potrero ..> ReglaPotrero : depende (max_reses_potrero)
+  Potrero ..> ReglaRes : depende (rangos de edad)
+  Potrero ..> Ternero : instancia
+  Potrero ..> Cebon : instancia
+  Potrero ..> Novillo : instancia
+
+  class Venta {
+    - potrero : Potrero
+    - fecha : DateTime
+    - res : Res
+    - monto : uint
+    + Venta(potrero : Potrero, fecha : DateTime, res : Res, monto : uint)
+    + Potrero : Potrero {get; set;}
+    + Fecha : DateTime {get; set;}
+    + Res : Res {get; set;}
+    + Monto : uint {get; set;}
+  }
+  Venta "0..*" o-- "1" Potrero
+  Venta "0..*" o-- "1" Res
+
+  class Hacienda {
+    - l_potreros : List<Potrero>
+    - l_ventas : List<Venta>
+    - l_vacunas : List<Vacuna>
+    - publisher_vacunacion_completa : PublisherVacunacionCompletada = new PublisherVacunacionCompletada()
+    - publisher_vacuna_vencida : PublisherVacunaVencida = new PublisherVacunaVencida()
+    - publisher_peso_min : PublisherPesoMin = new PublisherPesoMin()
+    - publisher_peso_ideal : PublisherPesoVenta = new PublisherPesoVenta()
+    ~ EventHandler() : void
+    + Hacienda()
+    + L_potreros : List<Potrero> {get; private set;}
+    + L_ventas : List<Venta> {get; private set;}
+    + L_vacunas : List<Vacuna> {get; private set;}
+    + crear_potrero(indentificacion : string, tipo_potrero : l_tipos_potreros) : string
+    + buscar_potrero(nombre : string) : Potrero
+    + anadir_res_potrero(id_potrero : string, nombre : string, edad : ushort, peso : uint) : string
+    + vender_res(id_potrero : string, nombre : string, monto : uint) : string
+    + alimentar_res(id_potrero : string, nombre : string) : string
+    + alimentar_res(id_potrero : string, nombre : string, cantidadAlimento : uint) : string
+    + crear_vacuna(nombre : string, lote : string, fecha_vencimiento : DateTime, fecha_aplicacion : DateTime, periodo_aplicacion : uint) : string
+    + crear_vacuna(nombre : string, lote : string, fecha_vencimiento : DateTime, fecha_aplicacion : DateTime, grado_atenuacion : enum_l_atenuaciones) : string
+    + crear_vacuna(nombre : string, lote_base : string, fecha_vencimiento : DateTime, fecha_aplicacion : DateTime, periodo_aplicacion : uint, cantidad : uint) : string
+    + crear_vacuna(nombre : string, lote_base : string, fecha_vencimiento : DateTime, fecha_aplicacion : DateTime, grado_atenuacion : enum_l_atenuaciones, cantidad : uint) : string
+    + aplicar_vacuna(vacuna : Vacuna, nombre : string, id_potrero : string) : string
+  }
+  Hacienda ..|> IVacunacion
+  Hacienda ..|> IVentaRes
+  Hacienda ..|> ICreacionVacuna
+  Hacienda "1" *-- "0..*" Potrero : l_potreros
+  Hacienda "1" *-- "0..*" Venta : l_ventas
+  Hacienda "1" *-- "0..*" Vacuna : l_vacunas
+  Hacienda "1" *-- "1" PublisherVacunacionCompletada
+  Hacienda "1" *-- "1" PublisherVacunaVencida
+  Hacienda "1" *-- "1" PublisherPesoMin
+  Hacienda "1" *-- "1" PublisherPesoVenta
+  Hacienda ..> ReglaVacuna : depende (límites por tipo de res)
+  Hacienda ..> Bacteriana : instancia
+  Hacienda ..> Viva : instancia
+}
+
+' ============================================================
+' Bib_Hacienda.Clases.Validaciones
+' ============================================================
+package "Bib_Hacienda.Clases.Validaciones" {
+
+  abstract class Validacion {
+    + {abstract} ValidarRes(res : Res) : bool
+    + {abstract} ValidarPotrero(potrero : Potrero) : bool
+    + {abstract} ValidarVacuna(vacuna : Vacuna) : bool
+    + {abstract} ValidarVenta(venta : Venta) : bool
+  }
+  Validacion ..|> IValidarInformacion
+
+  class ValidadorPotrero {
+    + ValidarPotrero(potrero : Potrero) : bool <<override>>
+    + ValidarRes(res : Res) : bool <<override>>
+    + ValidarVacuna(vacuna : Vacuna) : bool <<override>>
+    + ValidarVenta(venta : Venta) : bool <<override>>
+  }
+  ValidadorPotrero --|> Validacion
+
+  class ValidadorRes {
+    + ValidarRes(res : Res) : bool <<override>>
+    + ValidarPotrero(potrero : Potrero) : bool <<override>>
+    + ValidarVacuna(vacuna : Vacuna) : bool <<override>>
+    + ValidarVenta(venta : Venta) : bool <<override>>
+  }
+  ValidadorRes --|> Validacion
+
+  class ValidadorVacuna {
+    + ValidarVacuna(vacuna : Vacuna) : bool <<override>>
+    + ValidarRes(res : Res) : bool <<override>>
+    + ValidarPotrero(potrero : Potrero) : bool <<override>>
+    + ValidarVenta(venta : Venta) : bool <<override>>
+  }
+  ValidadorVacuna --|> Validacion
+
+  class ValidadorVenta {
+    + ValidarVenta(venta : Venta) : bool <<override>>
+    + ValidarRes(res : Res) : bool <<override>>
+    + ValidarPotrero(potrero : Potrero) : bool <<override>>
+    + ValidarVacuna(vacuna : Vacuna) : bool <<override>>
+  }
+  ValidadorVenta --|> Validacion
+}
+
+' ============================================================
+' p_mvcHacienda (raíz)
+' ============================================================
+package "p_mvcHacienda" {
+  class Program {
+    + {static} Main(args : string[]) : void
+  }
+  Program ..> Hacienda : crea (Singleton)
+  Program ..> "p_mvcHacienda.Servicios.PersistenciaService" : crea (Singleton)
+  Program ..> "p_mvcHacienda.Servicios.PotreroService" : registra
+  Program ..> "p_mvcHacienda.Servicios.ResService" : registra
+  Program ..> "p_mvcHacienda.Servicios.VacunaService" : registra
+  Program ..> "p_mvcHacienda.Servicios.VentaService" : registra
+  Program ..> "p_mvcHacienda.Servicios.UsuarioService" : crea y carga
+}
+
+' ============================================================
+' p_mvcHacienda.Models
+' ============================================================
+package "p_mvcHacienda.Models" {
+
+  class ErrorViewModel {
+    + RequestId : string? {get; set;}
+    + ShowRequestId : bool {get;} <<expression-bodied>>
+  }
+
+  class LoginViewModel {
+    + Username : string {get; set;} <<Required>>
+    + Password : string {get; set;} <<Required, DataType(Password)>>
+  }
+}
+
+' ============================================================
+' p_mvcHacienda.Servicios
+' ============================================================
+package "p_mvcHacienda.Servicios" {
+
+  class PersistenciaService {
+    - _directorioArchivos : string {readonly}
+    - _httpContextAccessor : IHttpContextAccessor {readonly}
+    - _interceptorValidacion : InterceptorValidarInformacion?
+    - _validadorVacunaProxy : ValidadorVacuna?
+    - _validadorPotreroProxy : ValidadorPotrero?
+    - _validadorResProxy : ValidadorRes?
+    - _validadorVentaProxy : ValidadorVenta?
+    + PersistenciaService(httpContextAccessor : IHttpContextAccessor, env : IWebHostEnvironment)
+    - InicializarProxies() : void
+    + GuardarPotreros(potreros : List<Potrero>) : string
+    + GuardarReses(potreros : List<Potrero>) : string
+    + GuardarVentas(ventas : List<Venta>) : string
+    + GuardarVacunas(vacunas : List<Vacuna>) : string
+    + GuardarVacunasAplicadas(potreros : List<Potrero>) : string
+    + GuardarUsuarios(usuarios : List<Usuario>) : string
+    + CargarPotreros() : List<Potrero>
+    + CargarReses(potreros : List<Potrero>) : void
+    + CargarVentas(potreros : List<Potrero>) : List<Venta>
+    + CargarVacunas() : List<Vacuna>
+    + CargarVacunasAplicadas(potreros : List<Potrero>) : void
+    + CargarUsuarios() : List<Usuario>
+  }
+  PersistenciaService "1" *-- "0..1" InterceptorValidarInformacion
+  PersistenciaService "1" *-- "0..1" ValidadorVacuna : proxy (Castle DynamicProxy)
+  PersistenciaService "1" *-- "0..1" ValidadorPotrero : proxy
+  PersistenciaService "1" *-- "0..1" ValidadorRes : proxy
+  PersistenciaService "1" *-- "0..1" ValidadorVenta : proxy
+  PersistenciaService ..> Bacteriana : instancia (carga)
+  PersistenciaService ..> Viva : instancia (carga)
+  PersistenciaService ..> Ternero : instancia (carga)
+  PersistenciaService ..> Novillo : instancia (carga)
+  PersistenciaService ..> Cebon : instancia (carga)
+
+  class PotreroService {
+    - _hacienda : Hacienda {readonly}
+    - _persistencia : PersistenciaService {readonly}
+    + PotreroService(hacienda : Hacienda, persistencia : PersistenciaService)
+    + CrearPotrero(identificacion : string, tipo : l_tipos_potreros) : string
+    + ObtenerTodosLosPotreros() : List<Potrero>
+    + ObtenerPotreroPorIdentificacion(identificacion : string) : Potrero?
+    + AgregarRes(potreroId : string, nombreRes : string, edad : ushort, peso : uint) : string
+    + ObtenerEstadisticas() : Dictionary<string, object>
+  }
+  PotreroService --> Hacienda
+  PotreroService --> PersistenciaService
+
+  class ResService {
+    - _hacienda : Hacienda {readonly}
+    - _persistencia : PersistenciaService {readonly}
+    + ResService(hacienda : Hacienda, persistencia : PersistenciaService)
+    + ObtenerTodasLasReses() : List<(Potrero Potrero, Res Res)>
+    + BuscarRes(potreroId : string, nombreRes : string) : Res?
+    + ObtenerEstadisticas() : Dictionary<string, object>
+  }
+  ResService --> Hacienda
+  ResService --> PersistenciaService
+
+  class UsuarioService {
+    - {static} _usuarios : List<Usuario>
+    - _persistencia : PersistenciaService {readonly}
+    + UsuarioService(persistencia : PersistenciaService)
+    + CargarUsuarios() : void
+    + CrearUsuario(nombre : string, contrasena : string) : string
+    + AutenticarUsuario(nombre : string, contrasena : string) : bool
+    + ObtenerTodosLosUsuarios() : List<Usuario>
+    + BuscarUsuario(nombre : string) : Usuario?
+    + ObtenerEstadisticas() : Dictionary<string, object>
+    + ValidateUserAsync(username : string, password : string) : Task<(bool, IEnumerable<Claim>)>
+  }
+  UsuarioService "1" *-- "0..*" Usuario : _usuarios {static}
+  UsuarioService --> PersistenciaService
+
+  class VacunaService {
+    - _hacienda : Hacienda {readonly}
+    - _persistencia : PersistenciaService {readonly}
+    + VacunaService(hacienda : Hacienda, persistencia : PersistenciaService)
+    + CrearVacuna(nombre : string, lote : string, fechaVencimiento : DateTime, fechaAplicacion : DateTime, periodoAplicacion : uint?, atenuacion : enum_l_atenuaciones?) : string
+    + AplicarVacuna(potreroId : string, nombreRes : string, loteVacuna : string) : string
+    + ObtenerVacunasDisponibles() : List<Vacuna>
+    + ObtenerVacunasAplicadas(potreroId : string, nombreRes : string) : List<Vacuna>
+    + ObtenerEstadisticas() : Dictionary<string, object>
+    - ConsolidarValidaciones(a : string, b : string) : string
+    - AsegurarPuntoFinal(mensaje : string) : string
+  }
+  VacunaService --> Hacienda
+  VacunaService --> PersistenciaService
+
+  class VentaService {
+    - _hacienda : Hacienda {readonly}
+    - _persistencia : PersistenciaService {readonly}
+    + VentaService(hacienda : Hacienda, persistencia : PersistenciaService)
+    + ObtenerTodasLasVentas() : List<Venta>
+    + ObtenerVentasPorPotrero(potreroId : string) : List<Venta>
+    + ObtenerVentasPorFechas(fechaInicio : DateTime, fechaFin : DateTime) : List<Venta>
+    + ObtenerEstadisticas() : Dictionary<string, object>
+  }
+  VentaService --> Hacienda
+  VentaService --> PersistenciaService
+}
+
+' ============================================================
+' p_mvcHacienda.Controllers
+' ============================================================
+package "p_mvcHacienda.Controllers" {
+
+  class AccountController {
+    - _usuarioService : UsuarioService {readonly}
+    + AccountController(usuarioService : UsuarioService)
+    + Login(returnUrl : string = null) : IActionResult <<HttpGet>>
+    + Login(model : LoginViewModel, returnUrl : string = null) : Task<IActionResult> <<HttpPost, async>>
+    + Logout() : Task<IActionResult>
+    + AccessDenied() : IActionResult
+  }
+  AccountController --> UsuarioService
+  AccountController ..> LoginViewModel
+
+  class HomeController {
+    - _logger : ILogger<HomeController> {readonly}
+    + HomeController(logger : ILogger<HomeController>)
+    + Index() : IActionResult
+    + Privacy() : IActionResult
+    + Error() : IActionResult <<ResponseCache>>
+  }
+  HomeController ..> ErrorViewModel
+
+  class PotreroController {
+    - _potreroService : PotreroService {readonly}
+    - _hacienda : Hacienda {readonly}
+    - _persistencia : PersistenciaService {readonly}
+    + PotreroController(potreroService : PotreroService, hacienda : Hacienda, persistencia : PersistenciaService)
+    + Index() : ActionResult <<HttpGet>>
+    + Create() : ActionResult
+    + Details(id : string) : ActionResult
+    + Create(identificacion : string, tipo : l_tipos_potreros) : ActionResult <<HttpPost>>
+  }
+  PotreroController --> PotreroService
+  PotreroController --> Hacienda
+  PotreroController --> PersistenciaService
+
+  class ResController {
+    - _resService : ResService {readonly}
+    - _potreroService : PotreroService {readonly}
+    - _hacienda : Hacienda {readonly}
+    - _persistencia : PersistenciaService {readonly}
+    + ResController(resService : ResService, potreroService : PotreroService, hacienda : Hacienda, persistencia : PersistenciaService)
+    + Index() : ActionResult <<HttpGet>>
+    + DetalleVacunas(potreroId : string, nombreRes : string) : ActionResult <<HttpGet>>
+    + Create() : ActionResult
+    + Create(potreroId : string, nombre : string, edad : ushort, peso : uint) : ActionResult <<HttpPost>>
+    + Alimentar(potreroId : string, nombreRes : string, cantidadAlimento : uint) : ActionResult
+    + Vender(potreroId : string, nombreRes : string, monto : string) : ActionResult
+  }
+  ResController --> ResService
+  ResController --> PotreroService
+  ResController --> Hacienda
+  ResController --> PersistenciaService
+
+  class UsuarioController {
+    - _usuarioService : UsuarioService {readonly}
+    + UsuarioController(usuarioService : UsuarioService)
+    + Index() : ActionResult <<HttpGet>>
+    + Create() : ActionResult <<HttpGet>>
+    + Create(nombre : string, contrasena : string) : ActionResult <<HttpPost>>
+  }
+  UsuarioController --> UsuarioService
+
+  class VacunaController {
+    - _vacunaService : VacunaService {readonly}
+    - _resService : ResService {readonly}
+    - _potreroService : PotreroService {readonly}
+    + VacunaController(vacunaService : VacunaService, resService : ResService, potreroService : PotreroService)
+    + Index() : ActionResult <<HttpGet>>
+    + Create() : ActionResult <<HttpGet>>
+    + Aplicar() : ActionResult <<HttpGet>>
+    + Create(tipoVacuna : string, nombre : string, lote : string, fechaVencimiento : string, fechaAplicacion : string, periodoAplicacion : uint?, atenuacion : enum_l_atenuaciones?) : ActionResult <<HttpPost, ValidateAntiForgeryToken>>
+    + Aplicar(potreroId : string, nombreRes : string, loteVacuna : string) : ActionResult <<HttpPost, ValidateAntiForgeryToken>>
+  }
+  VacunaController --> VacunaService
+  VacunaController --> ResService
+  VacunaController --> PotreroService
+
+  class VentaController {
+    - _ventaService : VentaService {readonly}
+    + VentaController(ventaService : VentaService)
+    + Index() : ActionResult
+    + Details(id : int) : ActionResult
+    + Create() : ActionResult
+    + Edit(id : int) : ActionResult
+    + Delete(id : int) : ActionResult
+    + Create(collection : IFormCollection) : ActionResult <<HttpPost, ValidateAntiForgeryToken>>
+    + Edit(id : int, collection : IFormCollection) : ActionResult
+    + Delete(id : int, collection : IFormCollection) : ActionResult
+  }
+  VentaController --> VentaService
+
+}
+
+@enduml
