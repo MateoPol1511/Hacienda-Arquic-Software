@@ -1,0 +1,918 @@
+@startuml Hacienda_TO-BE
+
+skinparam classAttributeIconSize 0
+skinparam shadowing false
+skinparam linetype ortho
+skinparam packageStyle rectangle
+skinparam ranksep 45
+skinparam nodesep 32
+skinparam wrapWidth 260
+skinparam class {
+  BackgroundColor White
+  BorderColor Black
+  ArrowColor Black
+}
+hide empty members
+
+' ================================================================
+' LEYENDA DE COLORES
+' Negro / sin relleno  = se conserva del AS-IS, sin cambios
+' Un color por principio SOLID = elemento nuevo o modificado,
+' coloreado según el principio que motiva la intervención
+' ================================================================
+legend top left
+  |= Color |= Significado |
+  |<#FFFFFF>| Conservado del AS-IS (sin cambios) |
+  |<#AED6F1>| Intervenido por **SRP** |
+  |<#A9DFBF>| Intervenido por **OCP** |
+  |<#F5CBA7>| Intervenido por **LSP** |
+  |<#D7BDE2>| Intervenido por **ISP** |
+  |<#F9E79F>| Intervenido por **DIP** |
+  Estereotipos: <<entity>> <<interface>> <<service>> <<validator>>
+  <<controller>> <<infrastructure>> <<rules>> <<serializer>> <<event>>
+endlegend
+
+' ================================================================
+' Bib_Hacienda.Dominio.Reglas  (conservado íntegramente)
+' ================================================================
+package "Bib_Hacienda.Dominio.Reglas" {
+
+  abstract class ReglaRes <<rules>> {
+    + {static} peso_min_ternero : ushort {readonly} = 150
+    + {static} peso_min_cebon : ushort {readonly} = 290
+    + {static} peso_min_novillo : ushort {readonly} = 400
+    + {static} peso_recom_venta_ternero : ushort {readonly} = 250
+    + {static} peso_recom_venta_cebon : ushort {readonly} = 420
+    + {static} peso_recom_venta_novillo : ushort {readonly} = 550
+    + {static} edad_max_ternero : byte {readonly} = 12
+    + {static} edad_max_cebon : byte {readonly} = 48
+  }
+
+  abstract class ReglaVacuna <<rules>> {
+    + {static} max_bac_ternero : byte {readonly} = 3
+    + {static} max_bac_cebon : byte {readonly} = 1
+    + {static} max_bac_novillo : byte {readonly} = 2
+    + {static} max_viv_ternero : byte {readonly} = 1
+    + {static} max_viv_cebon : byte {readonly} = 4
+    + {static} max_viv_novillo : byte {readonly} = 2
+    + {static} periodo_min_bac_aplic : byte {readonly} = 2
+    + {static} periodo_max_bac_aplic : byte {readonly} = 4
+  }
+
+  abstract class ReglaPotrero <<rules>> {
+    + {static} max_reses_potrero : ushort {readonly} = 150
+  }
+}
+
+' ================================================================
+' Bib_Hacienda.Dominio  (entidades)
+' ================================================================
+package "Bib_Hacienda.Dominio" {
+
+  class ResultadoOperacion <<entity>> #AED6F1 {
+    + Exito : bool {get}
+    + Mensaje : string {get}
+    + ResultadoOperacion(exito : bool, mensaje : string)
+    + {static} Ok(mensaje : string) : ResultadoOperacion
+    + {static} Fallo(mensaje : string) : ResultadoOperacion
+  }
+  note right of ResultadoOperacion
+    Sustituye a "string" y a las excepciones
+    usadas como control de flujo (H-08, H-14).
+    Mensaje conserva el MISMO texto que antes
+    devolvían los métodos: la salida observable
+    para el usuario final no cambia.
+  end note
+
+  interface IActivoVendible <<interface>> #A9DFBF {
+    + Identificador : string {get}
+  }
+  note right of IActivoVendible
+    Punto de extensión para SC-1 (productos
+    derivados). Res lo implementa hoy; un futuro
+    ProductoDerivado podría implementarlo sin
+    tocar Venta ni ServicioVentas.
+  end note
+
+  class Usuario <<entity>> #F9E79F {
+    - nombre : string
+    - contrasenaHash : string
+    + Usuario(nombre : string, contrasenaHash : string)
+    + Nombre : string {get; set;}
+    + ContrasenaHash : string {get; set;}
+  }
+  note right of Usuario
+    DIP (H-09): ya no almacena la contraseña en
+    texto plano; guarda el hash calculado por
+    IServicioHash (Infraestructura), inyectado en
+    ServicioAutenticacion. Usuario deja de tener
+    que saber CÓMO se hashea, solo transporta el
+    hash ya calculado.
+  end note
+
+  abstract class Vacuna <<entity>> {
+    - nombre : string
+    - lote : string
+    - fecha_vencimiento : DateTime
+    - fecha_aplicacion : DateTime
+    + Vacuna(nombre : string, lote : string, fecha_vencimiento : DateTime, fecha_aplicacion : DateTime)
+    + Nombre : string {get; set;}
+    + Lote : string {get; set;}
+    + Fecha_vencimiento : DateTime {get; set;}
+    + Fecha_aplicacion : DateTime {get; set;}
+  }
+
+  class Bacteriana <<entity>> {
+    - periodo_aplicacion : uint
+    + Bacteriana(nombre : string, lote : string, fecha_vencimiento : DateTime, fecha_aplicacion : DateTime, periodo_aplicacion : uint)
+    + Periodo_aplicacion : uint {get; set;}
+  }
+  Bacteriana --|> Vacuna
+  Bacteriana ..> ReglaVacuna : depende (límites de periodo)
+
+  class Viva <<entity>> {
+    - periodo_atenuacion : enum_l_atenuaciones
+    + Viva(nombre : string, lote : string, fecha_vencimiento : DateTime, fecha_aplicacion : DateTime, periodo_atenuacion : enum_l_atenuaciones)
+  }
+  Viva --|> Vacuna
+
+  enum "Viva.enum_l_atenuaciones" as enum_l_atenuaciones {
+    Atenuacion10 = 10
+    Atenuacion20 = 20
+    Atenuacion30 = 30
+  }
+  Viva +-- enum_l_atenuaciones
+
+  abstract class Res <<entity>> #A9DFBF-F5CBA7 {
+    - nombre : string
+    - peso : uint
+    - edad : ushort
+    - l_vacunas_aplicadas : List<Vacuna>
+    + Res(nombre : string, peso : uint, edad : ushort)
+    + Nombre : string {get; set;}
+    + Peso : uint {get; set;}
+    + Edad : ushort {get; set;}
+    + L_vacunas_aplicadas : List<Vacuna> {get; set;}
+    + Identificador : string {get}
+    + {abstract} PesoMinimo : ushort {get}
+    + {abstract} PesoRecomendadoVenta : ushort {get}
+    + {abstract} MaxVacunasBacterianas : byte {get}
+    + {abstract} MaxVacunasVivas : byte {get}
+    + {abstract} EsEdadValida(edad : ushort) : bool
+  }
+  Res ..|> IActivoVendible
+  Res "1" *-- "0..*" Vacuna : l_vacunas_aplicadas
+  note right of Res
+    OCP (H-10): miembros polimórficos que
+    reemplazan los "is Ternero/Cebon/Novillo"
+    repetidos en Publishers y en aplicar_vacuna.
+    LSP (H-08): Edad ya no lanza excepción al
+    asignar; la validez se consulta aparte con
+    EsEdadValida(), invocada por quien crea la res.
+    Degradado OCP+LSP: aplica también a
+    Ternero/Cebon/Novillo (heredan ambas).
+  end note
+
+  class Ternero <<entity>> #A9DFBF-F5CBA7 {
+    + Ternero(nombre : string, peso : uint, edad : ushort)
+    + PesoMinimo : ushort {get}
+    + PesoRecomendadoVenta : ushort {get}
+    + MaxVacunasBacterianas : byte {get}
+    + MaxVacunasVivas : byte {get}
+    + EsEdadValida(edad : ushort) : bool
+  }
+  Ternero --|> Res
+  Ternero ..> ReglaRes : depende (peso_min/recom/edad_max_ternero)
+
+  class Cebon <<entity>> #A9DFBF-F5CBA7 {
+    + Cebon(nombre : string, peso : uint, edad : ushort)
+    + PesoMinimo : ushort {get}
+    + PesoRecomendadoVenta : ushort {get}
+    + MaxVacunasBacterianas : byte {get}
+    + MaxVacunasVivas : byte {get}
+    + EsEdadValida(edad : ushort) : bool
+  }
+  Cebon --|> Res
+  Cebon ..> ReglaRes : depende (peso_min/recom/edad_max_ternero/cebon)
+
+  class Novillo <<entity>> #A9DFBF-F5CBA7 {
+    + Novillo(nombre : string, peso : uint, edad : ushort)
+    + PesoMinimo : ushort {get}
+    + PesoRecomendadoVenta : ushort {get}
+    + MaxVacunasBacterianas : byte {get}
+    + MaxVacunasVivas : byte {get}
+    + EsEdadValida(edad : ushort) : bool
+  }
+  Novillo --|> Res
+  Novillo ..> ReglaRes : depende (peso_min/recom/edad_max_cebon)
+
+  class Potrero <<entity>> #AED6F1 {
+    - identificacion : string
+    - l_reses : List<Res>
+    - tipo_potrero : string
+    - publisher_potrero_mitad : PublisherPotreroMitad
+    - publisher_potrero_lleno : PublisherPotreroLleno
+    + Potrero(identificacion : string, tipo_potrero : string, potreroMitad : PublisherPotreroMitad, potreroLleno : PublisherPotreroLleno)
+    + Identificacion : string {get; set;}
+    + L_reses : List<Res> {get; set;}
+    + Tipo_potrero : string {get; set;}
+    + TieneCapacidad() : bool
+    + AgregarRes(res : Res) : ResultadoOperacion
+    + BuscarRes(nombre : string) : Res
+  }
+  Potrero "1" *-- "0..150" Res : l_reses
+  Potrero "1" --> "1" PublisherPotreroMitad : usa
+  Potrero "1" --> "1" PublisherPotreroLleno : usa
+  Potrero ..> ReglaPotrero : depende (max_reses_potrero)
+  note right of Potrero
+    SRP (H-07/H-15): ya no instancia con switch ni
+    resuscribe eventos por llamada; AgregarRes recibe
+    la res ya construida por IRegistroFabricasRes.
+    Tipo_potrero pasa de enum a string (clave que
+    indexa RegistroFabricasRes): gana OCP, pierde
+    chequeo de tipos en compilación. Ver ADR-03.
+    Nota de notación: los Publisher* se reciben por
+    constructor (inyección), ya no se crean con "new"
+    dentro de Potrero como en el AS-IS; por eso la
+    relación es asociación (-->), no composición (*--).
+  end note
+
+  class Venta <<entity>> #A9DFBF {
+    - potrero : Potrero
+    - fecha : DateTime
+    - activo : IActivoVendible
+    - monto : uint
+    + Venta(potrero : Potrero, fecha : DateTime, activo : IActivoVendible, monto : uint)
+    + Potrero : Potrero {get; set;}
+    + Fecha : DateTime {get; set;}
+    + Activo : IActivoVendible {get; set;}
+    + Monto : uint {get; set;}
+  }
+  Venta "0..*" --> "1" Potrero : potrero
+  Venta "0..*" --> "1" IActivoVendible : activo
+  note right of Venta
+    OCP (SC-1): referencia IActivoVendible en vez
+    de Res concreta, para que una futura venta de
+    producto derivado no exija modificar Venta.
+    Asociación dirigida (no agregación): Venta
+    referencia, no crea ni posee Potrero/activo.
+  end note
+}
+
+' ================================================================
+' Bib_Hacienda.Dominio.Validacion  (ISP)
+' ================================================================
+package "Bib_Hacienda.Dominio.Validacion" {
+
+  interface IValidadorRes <<validator>> #D7BDE2 {
+    + EsValido(res : Res) : bool
+  }
+  interface IValidadorPotrero <<validator>> #D7BDE2 {
+    + EsValido(potrero : Potrero) : bool
+  }
+  interface IValidadorVacuna <<validator>> #D7BDE2 {
+    + EsValido(vacuna : Vacuna) : bool
+  }
+  interface IValidadorVenta <<validator>> #D7BDE2 {
+    + EsValido(venta : Venta) : bool
+  }
+
+  class ValidadorRes <<validator>> #D7BDE2 {
+    + EsValido(res : Res) : bool
+  }
+  ValidadorRes ..|> IValidadorRes
+
+  class ValidadorPotrero <<validator>> #D7BDE2 {
+    + EsValido(potrero : Potrero) : bool
+  }
+  ValidadorPotrero ..|> IValidadorPotrero
+
+  class ValidadorVacuna <<validator>> #D7BDE2 {
+    + EsValido(vacuna : Vacuna) : bool
+  }
+  ValidadorVacuna ..|> IValidadorVacuna
+
+  class ValidadorVenta <<validator>> #D7BDE2 {
+    + EsValido(venta : Venta) : bool
+  }
+  ValidadorVenta ..|> IValidadorVenta
+
+  note bottom of IValidadorRes
+    H-12 (ISP): reemplaza a IValidarInformacion,
+    que obligaba a las 4 clases a implementar
+    métodos ajenos con NotImplementedException.
+    Se elimina también la superclase abstracta
+    Validacion: ya no aporta valor.
+  end note
+}
+
+' ================================================================
+' Bib_Hacienda.Dominio.Eventos  (mayoría conservada)
+' ================================================================
+package "Bib_Hacienda.Dominio.Eventos" {
+
+  class PublisherPesoMin <<event>> #A9DFBF {
+    + <<delegate>> dele_peso_min(peso_min : string) : void
+    + evt_peso_min : dele_peso_min <<event>>
+    + Informar_Peso_Min(res : Res) : void
+  }
+  PublisherPesoMin ..> Res : depende (res.PesoMinimo)
+
+  class PublisherPesoVenta <<event>> #A9DFBF {
+    + <<delegate>> dele_peso_venta(peso_venta : string) : void
+    + evt_peso_venta : dele_peso_venta <<event>>
+    + Informar_Peso_Venta(res : Res) : void
+  }
+  PublisherPesoVenta ..> Res : depende (res.PesoRecomendadoVenta)
+
+  class PublisherPotreroLleno <<event>> {
+    + <<delegate>> delegado_potrero_lleno(mensaje : string) : void
+    + evt_potrero_lleno : delegado_potrero_lleno <<event>>
+    + Informar_Potrero_Lleno(cantidad_reses : ushort, potrero : Potrero) : void
+  }
+  PublisherPotreroLleno ..> ReglaPotrero : depende
+
+  class PublisherPotreroMitad <<event>> {
+    + <<delegate>> delegado_potrero_mitad(mensaje : string) : void
+    + evt_potrero_mitad : delegado_potrero_mitad <<event>>
+    + Informar_Potrero_Mitad(cantidad_reses : ushort, potrero : Potrero) : void
+  }
+  PublisherPotreroMitad ..> ReglaPotrero : depende
+
+  class PublisherVacunaVencida <<event>> {
+    + <<delegate>> dele_vacuna_vencida(mensaje : string) : void
+    + evt_vacuna_vencida : dele_vacuna_vencida <<event>>
+    + Informar_Vacuna_Vencida(vacuna : Vacuna) : bool
+  }
+
+  class PublisherVacunacionCompletada <<event>> #A9DFBF {
+    + <<delegate>> dele_vacunacion_completada(mensaje : string) : void
+    + evt_vacunacion_completada : dele_vacunacion_completada <<event>>
+    + Informar_Vacunacion_Completada(res : Res, contador_bacterianas : ushort, contador_vivas : ushort) : bool
+  }
+  PublisherVacunacionCompletada ..> Res : depende (res.MaxVacunasBacterianas/Vivas)
+
+  note bottom of PublisherVacunacionCompletada
+    H-10 y riesgo SC-3 (Fase 2): los tres
+    publishers coloreados ya no verifican
+    "is Ternero / is Cebon / is Novillo".
+    Consultan los miembros polimórficos de Res.
+    PotreroLleno/PotreroMitad/VacunaVencida no
+    tenían ese problema: se conservan igual.
+  end note
+}
+
+' ================================================================
+' Bib_Hacienda.Interfaces  (contratos del dominio)
+' ================================================================
+package "Bib_Hacienda.Interfaces" {
+
+  interface IAutenticacion <<interface>> #F5CBA7 {
+    + AutorizarOperacion(usuario : Usuario, operacion : string) : ResultadoOperacion
+  }
+  note right of IAutenticacion
+    LSP (ADR-5): antes devolvía void y comunicaba
+    éxito/rechazo lanzando excepción en ambos casos.
+    Con un único implementador hoy no hay sustitución
+    observable rota, pero el contrato real no estaba
+    en la firma: un segundo implementador futuro podría
+    no reproducir esa convención sin violar la firma y
+    aun así romper al consumidor. Ahora retorna
+    ResultadoOperacion de forma uniforme (mismo
+    mensaje descriptivo de antes), haciendo el contrato
+    explícito y sustituible. No relacionado con H-08
+    (que es el hallazgo de Res.Edad, ver ADR-1).
+  end note
+
+  interface ICreacionVacuna <<interface>> #AED6F1 {
+    + crear_vacuna(nombre : string, lote : string, fecha_vencimiento : DateTime, fecha_aplicacion : DateTime, periodo_aplicacion : uint) : ResultadoOperacion
+    + crear_vacuna(nombre : string, lote : string, fecha_vencimiento : DateTime, fecha_aplicacion : DateTime, grado_atenuacion : enum_l_atenuaciones) : ResultadoOperacion
+    + crear_vacuna(nombre : string, lote_base : string, fecha_vencimiento : DateTime, fecha_aplicacion : DateTime, periodo_aplicacion : uint, cantidad : uint) : ResultadoOperacion
+    + crear_vacuna(nombre : string, lote_base : string, fecha_vencimiento : DateTime, fecha_aplicacion : DateTime, grado_atenuacion : enum_l_atenuaciones, cantidad : uint) : ResultadoOperacion
+  }
+
+  interface IVacunacion <<interface>> #AED6F1 {
+    + aplicar_vacuna(vacuna : Vacuna, nombre : string, id_potrero : string) : ResultadoOperacion
+  }
+
+  interface IVentaRes <<interface>> #AED6F1 {
+    + vender_res(id_potrero : string, nombre : string, monto : uint) : ResultadoOperacion
+  }
+  note bottom of IVentaRes
+    H-14 (SRP): las 3 interfaces de arriba
+    cambian su tipo de retorno de "string" a
+    ResultadoOperacion. El texto del mensaje
+    no cambia; solo deja de mezclarse con el
+    control de flujo (ver ResultadoOperacion).
+  end note
+}
+
+' ================================================================
+' Bib_Hacienda.Aplicacion  (casos de uso + abstracciones DIP)
+' ================================================================
+package "Bib_Hacienda.Aplicacion" {
+
+  ' --- Repositorios (DIP) -------------------------------------
+  interface IRepositorioPotreros #F9E79F {
+    + ObtenerTodos() : List<Potrero>
+    + ObtenerPorId(identificacion : string) : Potrero
+    + Agregar(potrero : Potrero) : void
+    + Existe(identificacion : string) : bool
+  }
+  interface IRepositorioVentas #F9E79F {
+    + ObtenerTodas() : List<Venta>
+    + Agregar(venta : Venta) : void
+  }
+  interface IRepositorioVacunas #F9E79F {
+    + ObtenerDisponibles() : List<Vacuna>
+    + Agregar(vacuna : Vacuna) : void
+    + Remover(vacuna : Vacuna) : void
+  }
+  interface IRepositorioUsuarios #F9E79F {
+    + ObtenerTodos() : List<Usuario>
+    + BuscarPorNombre(nombre : string) : Usuario
+    + Agregar(usuario : Usuario) : void
+  }
+  note bottom of IRepositorioUsuarios
+    DIP (H-02, H-03, H-04, H-11, H-13): un
+    repositorio por entidad. Alto nivel
+    (Servicio*) depende de estas abstracciones;
+    la implementación concreta vive en
+    Infraestructura. Ver ADR-04.
+  end note
+
+  ' --- Fabricas de Res (OCP) ------------------------------------
+  interface IFabricaRes #A9DFBF {
+    + Crear(nombre : string, peso : uint, edad : ushort) : Res
+  }
+  class FabricaTernero #A9DFBF {
+    + Crear(nombre : string, peso : uint, edad : ushort) : Res
+  }
+  FabricaTernero ..|> IFabricaRes
+  FabricaTernero ..> Ternero : instancia
+
+  class FabricaCebon #A9DFBF {
+    + Crear(nombre : string, peso : uint, edad : ushort) : Res
+  }
+  FabricaCebon ..|> IFabricaRes
+  FabricaCebon ..> Cebon : instancia
+
+  class FabricaNovillo #A9DFBF {
+    + Crear(nombre : string, peso : uint, edad : ushort) : Res
+  }
+  FabricaNovillo ..|> IFabricaRes
+  FabricaNovillo ..> Novillo : instancia
+
+  interface IRegistroFabricasRes #A9DFBF {
+    + ObtenerFabrica(tipo : string) : IFabricaRes
+  }
+  class RegistroFabricasRes #A9DFBF {
+    - fabricas : Dictionary<string, IFabricaRes>
+    + RegistroFabricasRes(fabricas : Dictionary<string, IFabricaRes>)
+    + ObtenerFabrica(tipo : string) : IFabricaRes
+  }
+  RegistroFabricasRes ..|> IRegistroFabricasRes
+  RegistroFabricasRes "1" --> "0..*" IFabricaRes : fabricas registradas
+  note bottom of RegistroFabricasRes
+    OCP (H-07): una fábrica por tipo de Res, indexadas
+    por clave de texto (Tipo_potrero). Un 4º tipo se
+    agrega registrando una clase nueva en el
+    composition root, sin tocar Potrero ni
+    ServicioPotreros. Ver ADR-03.
+  end note
+
+  ' --- Fabricas de Vacuna (OCP) ---------------------------------
+  interface IFabricaVacunaBacteriana #A9DFBF {
+    + Crear(nombre : string, lote : string, fecha_vencimiento : DateTime, fecha_aplicacion : DateTime, periodo_aplicacion : uint) : Bacteriana
+  }
+  interface IFabricaVacunaViva #A9DFBF {
+    + Crear(nombre : string, lote : string, fecha_vencimiento : DateTime, fecha_aplicacion : DateTime, grado_atenuacion : enum_l_atenuaciones) : Viva
+  }
+  class FabricaVacunaBacteriana #A9DFBF {
+    + Crear(nombre : string, lote : string, fecha_vencimiento : DateTime, fecha_aplicacion : DateTime, periodo_aplicacion : uint) : Bacteriana
+  }
+  FabricaVacunaBacteriana ..|> IFabricaVacunaBacteriana
+  class FabricaVacunaViva #A9DFBF {
+    + Crear(nombre : string, lote : string, fecha_vencimiento : DateTime, fecha_aplicacion : DateTime, grado_atenuacion : enum_l_atenuaciones) : Viva
+  }
+  FabricaVacunaViva ..|> IFabricaVacunaViva
+  note bottom of FabricaVacunaViva
+    H-05 (OCP): reemplaza la instanciación
+    condicional por parámetros nulos en
+    crear_vacuna. Un 3er tipo de vacuna se
+    incorpora agregando una fábrica nueva.
+  end note
+
+  ' --- Autorizacion y hashing (OCP / DIP) -------------------------
+  interface IProveedorPermisos #A9DFBF {
+    + TienePermiso(rol : string, operacion : string) : bool
+  }
+  class ProveedorPermisosPorRol #A9DFBF {
+    + TienePermiso(rol : string, operacion : string) : bool
+  }
+  ProveedorPermisosPorRol ..|> IProveedorPermisos
+  note bottom of ProveedorPermisosPorRol
+    OCP: aísla el if/else de admin/empleado/
+    visitante que hoy vive dentro de
+    AutorizarOperacion, para que un rol nuevo
+    no obligue a modificar ServicioAutenticacion.
+    NOTA: este if/else de roles no corresponde a
+    H-08 (Res.Edad, ver ADR-1) ni a H-09 (lista
+    estática de usuarios en texto plano, ver
+    ADR-4). Verificar contra el inventario real
+    de Fase 1 si este síntoma ya tenía un código
+    propio o si debe registrarse como hallazgo
+    nuevo antes de entregar.
+  end note
+
+  interface IServicioHash <<service>> #F9E79F {
+    + Hash(textoPlano : string) : string
+    + Verificar(textoPlano : string, hash : string) : bool
+  }
+
+  ' --- Servicios de aplicacion (SRP) ------------------------------
+  class ServicioPotreros <<service>> #AED6F1 {
+    - repositorioPotreros : IRepositorioPotreros
+    - registroFabricas : IRegistroFabricasRes
+    + ServicioPotreros(repositorioPotreros : IRepositorioPotreros, registroFabricas : IRegistroFabricasRes)
+    + CrearPotrero(identificacion : string, tipo_potrero : string) : ResultadoOperacion
+    + BuscarPotrero(nombre : string) : Potrero
+    + AnadirResAPotrero(id_potrero : string, nombre : string, edad : ushort, peso : uint) : ResultadoOperacion
+    + ObtenerTodosLosPotreros() : List<Potrero>
+    + ObtenerPotreroPorIdentificacion(identificacion : string) : Potrero?
+    + ObtenerTodasLasReses() : List<(Potrero Potrero, Res Res)>
+    + BuscarRes(potreroId : string, nombreRes : string) : Res?
+    + ObtenerEstadisticas() : Dictionary<string, object>
+  }
+  ServicioPotreros "1" --> "1" IRepositorioPotreros : usa
+  ServicioPotreros "1" --> "1" IRegistroFabricasRes : usa
+  ServicioPotreros ..> Res : depende (res.EsEdadValida, tras crearla)
+  note bottom of ServicioPotreros
+    H-01/H-03 (SRP): agrupa las consultas que en el
+    AS-IS estaban duplicadas entre PotreroService y
+    ResService (ambas envolvían Hacienda/Persistencia
+    con el mismo patrón). Como Res solo existe dentro
+    de un Potrero, sus consultas quedan aquí: crear un
+    ServicioReses aparte sería una interfaz sin
+    responsabilidad propia (ver punto 22).
+  end note
+
+  class ServicioVentas <<service>> #AED6F1 {
+    - repositorioPotreros : IRepositorioPotreros
+    - repositorioVentas : IRepositorioVentas
+    + ServicioVentas(repositorioPotreros : IRepositorioPotreros, repositorioVentas : IRepositorioVentas)
+    + vender_res(id_potrero : string, nombre : string, monto : uint) : ResultadoOperacion
+    + ObtenerTodasLasVentas() : List<Venta>
+    + ObtenerVentasPorPotrero(potreroId : string) : List<Venta>
+    + ObtenerVentasPorFechas(fechaInicio : DateTime, fechaFin : DateTime) : List<Venta>
+    + ObtenerEstadisticas() : Dictionary<string, object>
+  }
+  ServicioVentas ..|> IVentaRes
+  ServicioVentas "1" --> "1" IRepositorioPotreros : usa
+  ServicioVentas "1" --> "1" IRepositorioVentas : usa
+
+  class ServicioAlimentacion <<service>> #AED6F1 {
+    - repositorioPotreros : IRepositorioPotreros
+    - publisherPesoMin : PublisherPesoMin
+    - publisherPesoVenta : PublisherPesoVenta
+    + ServicioAlimentacion(repositorioPotreros : IRepositorioPotreros, publisherPesoMin : PublisherPesoMin, publisherPesoVenta : PublisherPesoVenta)
+    + AlimentarRes(id_potrero : string, nombre : string) : ResultadoOperacion
+    + AlimentarRes(id_potrero : string, nombre : string, cantidadAlimento : uint) : ResultadoOperacion
+  }
+  ServicioAlimentacion "1" --> "1" IRepositorioPotreros : usa
+  ServicioAlimentacion "1" --> "1" PublisherPesoMin : usa
+  ServicioAlimentacion "1" --> "1" PublisherPesoVenta : usa
+
+  class ServicioVacunacion <<service>> #AED6F1 {
+    - repositorioPotreros : IRepositorioPotreros
+    - repositorioVacunas : IRepositorioVacunas
+    - publisherVacunaVencida : PublisherVacunaVencida
+    - publisherVacunacionCompletada : PublisherVacunacionCompletada
+    + ServicioVacunacion(repositorioPotreros : IRepositorioPotreros, repositorioVacunas : IRepositorioVacunas, publisherVacunaVencida : PublisherVacunaVencida, publisherVacunacionCompletada : PublisherVacunacionCompletada)
+    + aplicar_vacuna(vacuna : Vacuna, nombre : string, id_potrero : string) : ResultadoOperacion
+    + ObtenerVacunasAplicadas(potreroId : string, nombreRes : string) : List<Vacuna>
+  }
+  note bottom of ServicioVacunacion
+    OCP: el if/else por tipo de Res que tenía
+    aplicar_vacuna desaparece; consulta
+    res.MaxVacunasBacterianas/Vivas de forma
+    polimórfica (ver nota de Res).
+  end note
+  ServicioVacunacion ..|> IVacunacion
+  ServicioVacunacion "1" --> "1" IRepositorioPotreros : usa
+  ServicioVacunacion "1" --> "1" IRepositorioVacunas : usa
+  ServicioVacunacion "1" --> "1" PublisherVacunaVencida : usa
+  ServicioVacunacion "1" --> "1" PublisherVacunacionCompletada : usa
+  ServicioVacunacion ..> Res : depende (res.MaxVacunasBacterianas/Vivas)
+
+  class ServicioInventarioVacunas <<service>> #AED6F1 {
+    - repositorioVacunas : IRepositorioVacunas
+    - fabricaBacteriana : IFabricaVacunaBacteriana
+    - fabricaViva : IFabricaVacunaViva
+    + ServicioInventarioVacunas(repositorioVacunas : IRepositorioVacunas, fabricaBacteriana : IFabricaVacunaBacteriana, fabricaViva : IFabricaVacunaViva)
+    + crear_vacuna(nombre : string, lote : string, fecha_vencimiento : DateTime, fecha_aplicacion : DateTime, periodo_aplicacion : uint) : ResultadoOperacion
+    + crear_vacuna(nombre : string, lote : string, fecha_vencimiento : DateTime, fecha_aplicacion : DateTime, grado_atenuacion : enum_l_atenuaciones) : ResultadoOperacion
+    + crear_vacuna(nombre : string, lote_base : string, fecha_vencimiento : DateTime, fecha_aplicacion : DateTime, periodo_aplicacion : uint, cantidad : uint) : ResultadoOperacion
+    + crear_vacuna(nombre : string, lote_base : string, fecha_vencimiento : DateTime, fecha_aplicacion : DateTime, grado_atenuacion : enum_l_atenuaciones, cantidad : uint) : ResultadoOperacion
+    + CrearVacuna(nombre : string, lote : string, fecha_vencimiento : DateTime, fecha_aplicacion : DateTime, periodoAplicacion : uint?, atenuacion : enum_l_atenuaciones?) : ResultadoOperacion
+    + ObtenerVacunasDisponibles() : List<Vacuna>
+    + ObtenerEstadisticas() : Dictionary<string, object>
+  }
+  ServicioInventarioVacunas ..|> ICreacionVacuna
+  ServicioInventarioVacunas "1" --> "1" IRepositorioVacunas : usa
+  ServicioInventarioVacunas "1" --> "1" IFabricaVacunaBacteriana : usa
+  ServicioInventarioVacunas "1" --> "1" IFabricaVacunaViva : usa
+  note bottom of ServicioInventarioVacunas
+    H-17 (SRP): CrearVacuna(...) es el método fachada
+    que VacunaController.Create realmente invoca (un
+    solo formulario HTML con periodoAplicacion/atenuacion
+    opcionales). Decide bacteriana-vs-viva UNA sola vez
+    (periodoAplicacion con valor → Bacteriana; atenuacion
+    con valor → Viva) y delega en las sobrecargas de
+    crear_vacuna() de ICreacionVacuna. Reemplaza el
+    if/else que en el AS-IS estaba duplicado en
+    VacunaController y en VacunaService. No se agrega a
+    ICreacionVacuna: es un detalle de adaptación a un
+    formulario web, no un contrato del dominio.
+  end note
+
+  class ServicioAutenticacion <<service>> #F9E79F {
+    - repositorioUsuarios : IRepositorioUsuarios
+    - servicioHash : IServicioHash
+    - proveedorPermisos : IProveedorPermisos
+    + ServicioAutenticacion(repositorioUsuarios : IRepositorioUsuarios, servicioHash : IServicioHash, proveedorPermisos : IProveedorPermisos)
+    + crear_usuario(nombre : string, contrasena : string) : ResultadoOperacion
+    + listar_usuarios() : List<Usuario>
+    + ObtenerEstadisticas() : Dictionary<string, object>
+    + ValidarCredenciales(nombre : string, contrasena : string) : bool
+    + buscar_usuario(nombre : string) : Usuario
+    + AutorizarOperacion(usuario : Usuario, operacion : string) : ResultadoOperacion
+  }
+  ServicioAutenticacion ..|> IAutenticacion
+  ServicioAutenticacion "1" --> "1" IRepositorioUsuarios : usa
+  ServicioAutenticacion "1" --> "1" IServicioHash : usa
+  ServicioAutenticacion "1" --> "1" IProveedorPermisos : usa
+
+  note bottom of ServicioAutenticacion
+    H-09 (DIP): ya no guarda una lista estática
+    mutable en memoria; depende de
+    IRepositorioUsuarios. El hashing de
+    contraseñas se delega a IServicioHash.
+    H-16: en el AS-IS existían DOS mecanismos de
+    autenticación -Autenticacion (huérfana) y
+    UsuarioService (la que de verdad usa
+    AccountController)-. El TO-BE los unifica en
+    ServicioAutenticacion: es la única puerta de
+    entrada para validar credenciales, consultar
+    usuarios y autorizar operaciones. AccountController
+    y UsuarioController dependen de esta misma clase
+    (ver p_mvcHacienda.Presentacion); la generación del
+    ClaimsPrincipal de la cookie de sesión permanece en
+    AccountController porque ClaimsIdentity/ClaimTypes
+    son tipos de ASP.NET Core, no del dominio.
+  end note
+
+  note "H-06 / SRP: Hacienda se elimina como clase.\nSus responsabilidades se distribuyen entre\nlos servicios del paquete." as NotaHacienda
+}
+
+' ================================================================
+' Bib_Hacienda.Infraestructura
+' ================================================================
+package "Bib_Hacienda.Infraestructura" {
+
+  interface "ISerializador<T>" as ISerializador <<serializer>> #AED6F1 {
+    + Serializar(entidad : T) : string
+    + Deserializar(linea : string) : T
+  }
+  note bottom of ISerializador
+    SRP (H-11): aísla el formato posicional de
+    texto (Reses.txt, Ventas.txt, ...) del
+    repositorio que lo usa.
+  end note
+
+  ' --- Repositorios concretos (implementan IRepositorio*) --------
+  class RepositorioPotrerosTexto <<infrastructure>> #F9E79F {
+    - serializadorPotrero : ISerializador<Potrero>
+    - serializadorRes : ISerializador<Res>
+    - validadorPotrero : IValidadorPotrero
+    - validadorRes : IValidadorRes
+    + RepositorioPotrerosTexto(serializadorPotrero : ISerializador<Potrero>, serializadorRes : ISerializador<Res>, validadorPotrero : IValidadorPotrero, validadorRes : IValidadorRes)
+    + ObtenerTodos() : List<Potrero>
+    + ObtenerPorId(identificacion : string) : Potrero
+    + Agregar(potrero : Potrero) : void
+    + Existe(identificacion : string) : bool
+  }
+  RepositorioPotrerosTexto ..|> IRepositorioPotreros
+  RepositorioPotrerosTexto "1" --> "1" IValidadorPotrero : valida antes de Agregar
+  RepositorioPotrerosTexto "1" --> "1" IValidadorRes : valida antes de Agregar
+  note bottom of RepositorioPotrerosTexto
+    H-11/H-12: la validación que en el AS-IS hacía
+    PersistenciaService mediante proxies de Castle
+    DynamicProxy (InterceptorValidarInformacion) ahora
+    es una llamada explícita del repositorio al
+    validador correspondiente antes de persistir.
+    Mismo comportamiento observable, sin AOP.
+  end note
+
+  class RepositorioVentasTexto <<infrastructure>> #F9E79F {
+    - serializadorVenta : ISerializador<Venta>
+    - validadorVenta : IValidadorVenta
+    + RepositorioVentasTexto(serializadorVenta : ISerializador<Venta>, validadorVenta : IValidadorVenta)
+    + ObtenerTodas() : List<Venta>
+    + Agregar(venta : Venta) : void
+  }
+  RepositorioVentasTexto ..|> IRepositorioVentas
+  RepositorioVentasTexto "1" --> "1" IValidadorVenta : valida antes de Agregar
+
+  class RepositorioVacunasTexto <<infrastructure>> #F9E79F {
+    - serializadorVacuna : ISerializador<Vacuna>
+    - validadorVacuna : IValidadorVacuna
+    + RepositorioVacunasTexto(serializadorVacuna : ISerializador<Vacuna>, validadorVacuna : IValidadorVacuna)
+    + ObtenerDisponibles() : List<Vacuna>
+    + Agregar(vacuna : Vacuna) : void
+    + Remover(vacuna : Vacuna) : void
+  }
+  RepositorioVacunasTexto ..|> IRepositorioVacunas
+  RepositorioVacunasTexto "1" --> "1" IValidadorVacuna : valida antes de Agregar
+
+  class RepositorioUsuariosTexto <<infrastructure>> #F9E79F {
+    - serializadorUsuario : ISerializador<Usuario>
+    + ObtenerTodos() : List<Usuario>
+    + BuscarPorNombre(nombre : string) : Usuario
+    + Agregar(usuario : Usuario) : void
+  }
+  RepositorioUsuariosTexto ..|> IRepositorioUsuarios
+
+  ' --- Hashing e interceptores ------------------------------------
+  class ServicioHashSha256 <<infrastructure>> #F9E79F {
+    + Hash(textoPlano : string) : string
+    + Verificar(textoPlano : string, hash : string) : bool
+  }
+  ServicioHashSha256 ..|> IServicioHash
+
+  note as NotaInterceptoresRetirados
+    H-11/H-12 (auditoría): en el AS-IS,
+    InterceptorAutenticacion e
+    InterceptorValidarInformacion envolvían con Castle
+    DynamicProxy a los proxies que creaba
+    PersistenciaService. Al eliminarse PersistenciaService
+    y pasar la validación a una dependencia explícita del
+    repositorio (IValidador*, ver RepositorioPotrerosTexto/
+    VentasTexto/VacunasTexto), el mecanismo de proxy
+    dinámico deja de tener una clase que lo instancie y se
+    retira: mismo comportamiento observable, sin AOP.
+    Autorización: se conserva vía IAutenticacion/
+    IProveedorPermisos + [Authorize] de ASP.NET Core en
+    los controllers (ya presente en HomeController desde
+    el AS-IS), sin necesitar un interceptor propio.
+  end note
+}
+
+' ================================================================
+' p_mvcHacienda.Models  (conservados sin cambios; no son parte
+' del problema de acoplamiento que motiva este rediseño)
+' ================================================================
+package "p_mvcHacienda.Models" {
+  class ErrorViewModel {
+    + RequestId : string? {get; set;}
+    + ShowRequestId : bool {get;}
+  }
+  class LoginViewModel {
+    + Username : string {get; set;}
+    + Password : string {get; set;}
+  }
+}
+
+' ================================================================
+' p_mvcHacienda.Presentacion  (los 7 controllers propios del
+' AS-IS continúan; todos pasan de depender de Hacienda/
+' PersistenciaService/servicios viejos a depender de los
+' servicios de aplicación de Bib_Hacienda.Aplicacion)
+' ================================================================
+package "p_mvcHacienda.Presentacion" {
+
+  class AccountController <<controller>> #F9E79F {
+    - servicioAutenticacion : ServicioAutenticacion
+    + AccountController(servicioAutenticacion : ServicioAutenticacion)
+    + Login(returnUrl : string = null) : IActionResult <<HttpGet>>
+    + Login(model : LoginViewModel, returnUrl : string = null) : Task<IActionResult> <<HttpPost, async>>
+    + Logout() : Task<IActionResult>
+    + AccessDenied() : IActionResult
+  }
+  AccountController "1" --> "1" ServicioAutenticacion : usa
+  AccountController ..> LoginViewModel
+  note bottom of AccountController
+    H-16 (DIP): reemplaza a UsuarioService (eliminado,
+    ver ServicioAutenticacion). El login sigue emitiendo
+    la misma cookie de sesión ("CookieAuth"); solo cambia
+    de dónde obtiene y valida las credenciales.
+  end note
+
+  class HomeController <<controller>> {
+    - _logger : ILogger<HomeController> {readonly}
+    + HomeController(logger : ILogger<HomeController>)
+    + Index() : IActionResult
+    + Privacy() : IActionResult
+    + Error() : IActionResult <<ResponseCache>>
+  }
+  HomeController ..> ErrorViewModel
+
+  class PotreroController <<controller>> #F9E79F {
+    - servicioPotreros : ServicioPotreros
+    + PotreroController(servicioPotreros : ServicioPotreros)
+    + Index() : ActionResult <<HttpGet>>
+    + Create() : ActionResult
+    + Details(id : string) : ActionResult
+    + Create(identificacion : string, tipo : string) : ActionResult <<HttpPost>>
+  }
+  PotreroController "1" --> "1" ServicioPotreros : usa
+
+  class ResController <<controller>> #F9E79F {
+    - servicioPotreros : ServicioPotreros
+    - servicioAlimentacion : ServicioAlimentacion
+    - servicioVentas : ServicioVentas
+    + ResController(servicioPotreros : ServicioPotreros, servicioAlimentacion : ServicioAlimentacion, servicioVentas : ServicioVentas)
+    + Index() : ActionResult <<HttpGet>>
+    + DetalleVacunas(potreroId : string, nombreRes : string) : ActionResult <<HttpGet>>
+    + Create() : ActionResult
+    + Create(potreroId : string, nombre : string, edad : ushort, peso : uint) : ActionResult <<HttpPost>>
+    + Alimentar(potreroId : string, nombreRes : string, cantidadAlimento : uint) : ActionResult
+    + Vender(potreroId : string, nombreRes : string, monto : string) : ActionResult
+  }
+  ResController "1" --> "1" ServicioPotreros : usa
+  ResController "1" --> "1" ServicioAlimentacion : usa
+  ResController "1" --> "1" ServicioVentas : usa
+  note bottom of ResController
+    DIP (H-01/H-02): antes dependía de Hacienda y
+    PersistenciaService concretas (además de
+    ResService/PotreroService, que solo las envolvían).
+    Ahora depende de los servicios de aplicación
+    concretos; ver Composition Root.
+  end note
+
+  class UsuarioController <<controller>> #F9E79F {
+    - servicioAutenticacion : ServicioAutenticacion
+    + UsuarioController(servicioAutenticacion : ServicioAutenticacion)
+    + Index() : ActionResult <<HttpGet>>
+    + Create() : ActionResult <<HttpGet>>
+    + Create(nombre : string, contrasena : string) : ActionResult <<HttpPost>>
+  }
+  UsuarioController "1" --> "1" ServicioAutenticacion : usa
+
+  class VacunaController <<controller>> #F9E79F {
+    - servicioInventarioVacunas : ServicioInventarioVacunas
+    - servicioVacunacion : ServicioVacunacion
+    - servicioPotreros : ServicioPotreros
+    + VacunaController(servicioInventarioVacunas : ServicioInventarioVacunas, servicioVacunacion : ServicioVacunacion, servicioPotreros : ServicioPotreros)
+    + Index() : ActionResult <<HttpGet>>
+    + Create() : ActionResult <<HttpGet>>
+    + Aplicar() : ActionResult <<HttpGet>>
+    + Create(tipoVacuna : string, nombre : string, lote : string, fechaVencimiento : string, fechaAplicacion : string, periodoAplicacion : uint?, atenuacion : enum_l_atenuaciones?) : ActionResult <<HttpPost, ValidateAntiForgeryToken>>
+    + Aplicar(potreroId : string, nombreRes : string, loteVacuna : string) : ActionResult <<HttpPost, ValidateAntiForgeryToken>>
+  }
+  VacunaController "1" --> "1" ServicioInventarioVacunas : usa
+  VacunaController "1" --> "1" ServicioVacunacion : usa
+  VacunaController "1" --> "1" ServicioPotreros : usa
+
+  class VentaController <<controller>> #F9E79F {
+    - servicioVentas : ServicioVentas
+    + VentaController(servicioVentas : ServicioVentas)
+    + Index() : ActionResult
+    + Details(id : int) : ActionResult
+    + Create() : ActionResult
+    + Edit(id : int) : ActionResult
+    + Delete(id : int) : ActionResult
+    + Create(collection : IFormCollection) : ActionResult <<HttpPost, ValidateAntiForgeryToken>>
+    + Edit(id : int, collection : IFormCollection) : ActionResult
+    + Delete(id : int, collection : IFormCollection) : ActionResult
+  }
+  VentaController "1" --> "1" ServicioVentas : usa
+  note bottom of VentaController
+    Details/Edit/Delete ya eran stubs de scaffolding sin
+    lógica en el AS-IS (solo redirigen); se conservan
+    igual, sin inventarles comportamiento nuevo.
+  end note
+
+  note as NotaCompositionRoot
+    Composition Root (Program.cs, fuera del
+    dominio, no modelado como clase): aquí se
+    registran todas las implementaciones
+    concretas (IRepositorio*, fábricas,
+    IServicioHash, IProveedorPermisos) contra
+    sus abstracciones. Ver ADR-04.
+  end note
+}
+
+' ================================================================
+' Enlaces invisibles: solo apilan paquetes para reducir cruces
+' de líneas. No representan relaciones del modelo.
+' ================================================================
+ReglaRes -[hidden]d- ResultadoOperacion
+Usuario -[hidden]d- IValidadorRes
+IValidadorRes -[hidden]d- PublisherPesoMin
+PublisherPesoMin -[hidden]d- IAutenticacion
+IAutenticacion -[hidden]d- IRepositorioPotreros
+IRepositorioPotreros -[hidden]d- ISerializador
+ISerializador -[hidden]d- ResController
+
+@enduml
