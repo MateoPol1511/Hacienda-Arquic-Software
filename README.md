@@ -8,7 +8,7 @@
 | **Integrador y evidencia** | Consistencia diagrama–código, estructura del entregable, bitácora de uso de IA, métricas antes/después. | Mateo Polanco |
 
 
-Enlace al Video: 
+Enlace al Video: https://youtu.be/yuiFwFLtOTk
 
 
 ## Ejecución del proyecto
